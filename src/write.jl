@@ -44,6 +44,16 @@ function write(io::IO, obj::Union{AbstractArray,Tuple,AbstractSet})
     return
 end
 
+# TODO: Make work for multidimensional arrays
+function JSON2.write(io::IO, obj::Array{T, 2}) where {T} Base.write(io, '[')
+    for r in 1:size(obj)[1] #Writing column major form because that makes sense in the JSON
+        JSON2.write(io, obj[r, :])
+        r != size(obj)[1] && Base.write(io, ", ")
+    end
+    Base.write(io, ']')
+    return
+end
+
 write(io::IO, obj::Function) = (Base.write(io, obj.str); return)
 write(io::IO, obj::Number) = (Base.write(io, string(obj)); return)
 write(io::IO, obj::AbstractFloat) = (Base.print(io, isfinite(obj) ? obj : "null"); return)

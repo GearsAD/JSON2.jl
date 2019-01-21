@@ -68,13 +68,23 @@ end
     @test JSON2.read(json_zeros, Dict) == zeros
 end
 
+struct TestStruct
+    test::Vector{Float64}
+    test2D::Array{Float64, 2}
+end
+
 @testset "Arrays" begin
 # Printing an empty array or Dict shouldn't cause a BoundsError
 @test JSON2.write(String[]) == "[]"
 @test JSON2.write(Dict()) == "{}"
 
 #Multidimensional arrays
-@test_broken JSON2.write([0 1; 2 0]) == "[[0,2],[1,0]]" #TODO
+@test JSON2.write([0 1; 2 0]) == "[[0,1], [2,0]]"
+t = TestStruct(collect(1:20), collect(reshape(1:20, (4,5))))
+js = JSON2.write(t)
+tR = JSON2.read(js, TestStruct)
+@test tR.test == t.test
+@test tR.test2D == t.test2D
 end
 
 @testset "Pairs" begin

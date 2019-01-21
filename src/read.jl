@@ -50,7 +50,7 @@ invalid(T, b) = ArgumentError("invalid JSON detected parsing type '$T': encounte
 read(str::AbstractString, T=Any, args...) = read(IOBuffer(str), T, args...)
 
 # read generic JSON: detect null, Bool, Int, Float, String, Array, Dict/Object into a NamedTuple
-function read(io::IO, ::Type{Any}=Any)
+function read(io::IO, t::Type{Any}=Any)
     eof(io) && return NamedTuple()
     wh!(io)
     b = peekbyte(io)
@@ -58,7 +58,6 @@ function read(io::IO, ::Type{Any}=Any)
         # object
         return read(io, NamedTuple)
     elseif b == UInt('[')
-        # array
         # TODO: we could try and be fancy here and parse a more specific vector
         return read(io, Vector{Any})
     elseif (NEG_ONE < b < TEN) || (b == MINUS || b == PLUS)
@@ -173,22 +172,60 @@ end
 
 read(io::IO, ::Type{T}) where {T <: Tuple} = Tuple(read(io, Array))
 read(io::IO, ::Type{T}) where {T <: AbstractSet} = T(read(io, Array))
-read(io::IO, ::Type{T}) where {T <: AbstractArray} = read(io, T([]))
+function read(io::IO, ::Type{T}) where {T <: AbstractArray}
+    # Initialize a generic empty array instance
+    instance = T(undef, zeros(Int, ndims(T))...)
+    # Dispatch to reader
+    return read(io, instance)
+end
 
 function read(io::IO, A::AbstractArray{eT}) where {eT}
     T = typeof(A)
     @expect '['
     wh!(io)
     peekbyte(io) == CLOSE_SQUARE_BRACE && (readbyte(io); @goto done)
+
+    dims = zeros(Int, ndims(T))
+    dimset = zeros(Bool, ndims(T)) .& false # array of false.
+    curdepth = 1
+    a = Vector{eT}()
     while true
-        push!(A, read(io, eT)) # recursively reads one element
-        wh!(io)
-        @expectoneof ',' ']'
-        b == CLOSE_SQUARE_BRACE && @goto done
-        wh!(io)
+        b = peekbyte(io)
+        # @show Char(b)
+        if b == OPEN_SQUARE_BRACE
+            if !dimset[curdepth]
+                dims[curdepth]+=1
+            end
+            curdepth += 1
+            readbyte(io)
+            wh!(io)
+        elseif b == CLOSE_SQUARE_BRACE
+            # Test the size is correct and/or update it
+            curdepth > length(dims) && error("Trying to read a JSON array of dimensionality $(ndims(T)) and reading higher dimensionality data...")
+            if !dimset[curdepth]
+                dimset[curdepth] = true
+            end
+            curdepth -= 1
+            readbyte(io)
+            curdepth == 0 && @goto done
+            wh!(io)
+        elseif b == COMMA
+            # Continue
+            readbyte(io)
+            wh!(io)
+        else
+            push!(a, read(io, eT)) # Read a base element
+            if !dimset[curdepth]
+                dims[curdepth]+=1
+            end
+            wh!(io)
+        end
     end
     @label done
-    return A
+    prod(dims) != length(a) && error("Found array with dimensions $dims but read $(length(atemp)) elements, please check the underlying JSON.")
+    length(dims) == 1 && return a
+    # Matrix, need to convert from row to column major
+    return collect(permutedims(reshape(a, dims[end:-1:1]...)))
 end
 
 function read(io::IO, ::Type{Function})
