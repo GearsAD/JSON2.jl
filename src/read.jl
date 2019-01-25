@@ -50,7 +50,7 @@ invalid(T, b) = ArgumentError("invalid JSON detected parsing type '$T': encounte
 read(str::AbstractString, T=Any, args...) = read(IOBuffer(str), T, args...)
 
 # read generic JSON: detect null, Bool, Int, Float, String, Array, Dict/Object into a NamedTuple
-function read(io::IO, t::Type{Any}=Any)
+function read(io::IO, ::Type{Any}=Any)
     eof(io) && return NamedTuple()
     wh!(io)
     b = peekbyte(io)
@@ -222,8 +222,9 @@ function read(io::IO, A::AbstractArray{eT}) where {eT}
         end
     end
     @label done
+    # Return if it's a vector
+    ndims(T) == 1 && return a
     prod(dims) != length(a) && error("Found array with dimensions $dims but read $(length(atemp)) elements, please check the underlying JSON.")
-    length(dims) == 1 && return a
     # Matrix, need to convert from row to column major
     return collect(permutedims(reshape(a, dims[end:-1:1]...)))
 end
